@@ -90,11 +90,13 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             let area = f.area();
 
             // ── Outer border ──────────────────────────────────────────────────
+            // group_total: unfiltered count for the current group (ignores query)
+            let group_total = all.iter().filter(|s| groups[group_sel].0.matches(s)).count();
             let count_str = format!(
                 " {}  ·  {}/{} ",
                 groups[group_sel].0.label(),
                 visible.len(),
-                all.len()
+                group_total,
             );
             let outer = Block::default()
                 .borders(Borders::ALL)
