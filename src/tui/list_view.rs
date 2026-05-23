@@ -3,10 +3,10 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use rusqlite::Connection;
@@ -244,14 +244,8 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             );
 
             // ── Status bar ────────────────────────────────────────────────────
-            let status: String = if pending_delete.is_some() {
-                "  [y] Confirm delete snippet  [n/Esc] Cancel".to_string()
-            } else if pending_group_delete {
-                format!(
-                    "  [y] Delete '{}' ({} snippets)  [n/Esc] Cancel",
-                    groups[group_sel].0.label(),
-                    group_total,
-                )
+            let status: String = if pending_delete.is_some() || pending_group_delete {
+                "  Y  confirm  ·  N / Esc  cancel".to_string()
             } else if focus == Focus::Search {
                 "  Type to filter  [Enter/Esc] done".to_string()
             } else if !query.is_empty() {
@@ -265,6 +259,93 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 Paragraph::new(Span::styled(status, Style::default().fg(TN_MUTED))),
                 rows[2],
             );
+
+            // ── Delete confirmation popup ─────────────────────────────────────
+            if pending_delete.is_some() || pending_group_delete {
+                let popup_area = centered_rect(50, 12, area);
+                f.render_widget(Clear, popup_area);
+
+                let (subject, detail) = if let Some(vi) = pending_delete {
+                    let name = visible.get(vi)
+                        .and_then(|&ai| all.get(ai))
+                        .map(|s| s.name.as_str())
+                        .unwrap_or("?");
+                    (format!("  Delete snippet \"{}\"?", name), None)
+                } else {
+                    match &groups[group_sel].0 {
+                        GroupFilter::All => (
+                            "  Delete ALL snippets?".to_string(),
+                            Some(format!("  {} snippets will be permanently removed.", group_total)),
+                        ),
+                        GroupFilter::Ungrouped => (
+                            "  Delete all ungrouped snippets?".to_string(),
+                            Some(format!("  {} snippets will be permanently removed.", group_total)),
+                        ),
+                        GroupFilter::Named(g) => (
+                            format!("  Delete group \"{}\"?", g),
+                            Some(format!("  {} snippets will be permanently removed.", group_total)),
+                        ),
+                    }
+                };
+
+                let mut popup_lines = vec![
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        subject,
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    )),
+                ];
+                if let Some(d) = detail {
+                    popup_lines.push(Line::from(Span::styled(
+                        d,
+                        Style::default().fg(TN_ORANGE),
+                    )));
+                }
+                popup_lines.extend([
+                    Line::from(Span::styled(
+                        "  This action cannot be undone.",
+                        Style::default().fg(TN_RED),
+                    )),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(
+                            "  Y  ",
+                            Style::default().bg(TN_RED).fg(Color::White).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            "  Yes, delete forever",
+                            Style::default().fg(TN_RED).add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(
+                            "  N  ",
+                            Style::default().bg(TN_DIM).fg(TN_MUTED),
+                        ),
+                        Span::styled("  Cancel", Style::default().fg(TN_MUTED)),
+                    ]),
+                    Line::from(""),
+                ]);
+
+                f.render_widget(
+                    Paragraph::new(popup_lines).block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Double)
+                            .border_style(Style::default().fg(TN_RED))
+                            .title(Span::styled(
+                                " ⚠  DELETE CONFIRMATION ",
+                                Style::default()
+                                    .fg(TN_RED)
+                                    .add_modifier(Modifier::BOLD),
+                            )),
+                    ),
+                    popup_area,
+                );
+            }
         })?;
 
         // ── Events ────────────────────────────────────────────────────────────
@@ -408,6 +489,15 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 _ => {}
             }
         }
+    }
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width: width.min(area.width),
+        height: height.min(area.height),
     }
 }
 
