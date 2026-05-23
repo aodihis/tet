@@ -86,8 +86,8 @@ These cannot be used as shortcut names:
 | Phase | Status |
 |-------|--------|
 | 1 — Foundation | ✓ |
-| 2 — Core CRUD (non-interactive) | pending |
-| 3 — TUI list with search | pending |
-| 4 — Interactive save form | pending |
+| 2 — Core CRUD (non-interactive) | ✓ |
+| 3 — TUI list with search | ✓ |
+| 4 — Interactive save form | ✓ |
 | 5 — Run shortcuts + fuzzy fallback | pending |
 | 6 — Advanced features | pending |
