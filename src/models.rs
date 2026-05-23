@@ -2,12 +2,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Snippet {
-    pub id: i64,
-    pub shortcut: String,
-    pub group_name: Option<String>,
-    pub description: Option<String>,
+    pub id: u16,
+    pub name: String,
+    pub group_name: String,
     pub commands: Vec<String>,
     pub created_at: String,
-    pub last_used_at: Option<String>,
-    pub use_count: i64,
+}
+
+pub fn display_name(group: &str, name: &str) -> String {
+    if group.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", group, name)
+    }
 }

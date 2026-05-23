@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 pub const RESERVED: &[&str] = &[
     "save", "last", "list", "ls", "search", "find",
-    "delete", "del", "rm", "help", "run", "-",
+    "delete", "del", "rm", "help", "run",
 ];
 
 #[derive(Parser)]
@@ -11,30 +11,34 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// Run a saved shortcut directly (e.g. tet ping)
-    pub shortcut: Option<String>,
+    /// Run a snippet: `tet <name>` or `tet <group> <name>`
+    pub run_args: Vec<String>,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Save a new snippet (interactive if args omitted)
+    /// Save a new snippet (interactive if name/cmd omitted)
     Save {
-        /// Group name, or "-" for ungrouped
-        group: Option<String>,
-        shortcut: Option<String>,
+        /// Group name (empty = ungrouped)
+        #[arg(short = 'g', long, default_value = "")]
+        group: String,
+        name: Option<String>,
         #[arg(trailing_var_arg = true)]
         cmd: Vec<String>,
     },
     /// Save the last shell command as a snippet
     Last,
-    /// List snippets; optionally filter by group ("-" for ungrouped)
+    /// List snippets; optionally filter by group name
     List {
         group: Option<String>,
     },
     /// Delete a saved snippet
     #[command(aliases = ["del", "rm"])]
     Delete {
-        shortcut: String,
+        /// Group name (empty = ungrouped)
+        #[arg(short = 'g', long, default_value = "")]
+        group: String,
+        name: String,
     },
     /// Print shell hook script (bash, zsh, pwsh)
     Shell {
