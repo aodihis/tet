@@ -51,7 +51,7 @@ enum Focus {
     Search,
 }
 
-pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>> {
+pub fn run(conn: &Connection, snippets: Vec<Snippet>, prefill_query: Option<String>) -> Result<Option<Snippet>> {
     let _guard = TerminalGuard::new()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
@@ -59,15 +59,12 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
     let matcher = SkimMatcherV2::default();
     let mut all = snippets;
     let mut composites: Vec<String> = all.iter().map(composite).collect();
-    let mut query = String::new();
+    let mut query = prefill_query.unwrap_or_default();
     let mut focus = Focus::Snippets;
 
-    let init_indices: Vec<usize> = (0..all.len()).collect();
-    let mut groups = build_groups_filtered(&all, &init_indices);
-    let mut group_sel: usize = 0;
+    let (mut groups, mut group_sel, mut visible) =
+        refresh(&all, &composites, &query, &matcher, &GroupFilter::All);
     let mut group_list_state = ListState::default();
-
-    let mut visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
     let mut snippet_sel: usize = 0;
     let mut snippet_list_state = ListState::default();
 

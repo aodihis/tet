@@ -88,6 +88,14 @@ pub fn delete_all(conn: &Connection) -> Result<usize> {
         .context("Failed to delete all snippets")
 }
 
+pub fn get_by_name(conn: &Connection, name: &str) -> Result<Vec<Snippet>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, group_name, commands, created_at \
+         FROM snippets WHERE name = ?1 ORDER BY group_name",
+    )?;
+    stmt.query_map([name], map_row)?.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub fn update_snippet(conn: &Connection, snippet: &Snippet) -> Result<()> {
     conn.execute(
         "UPDATE snippets SET name = ?1, group_name = ?2, commands = ?3 WHERE id = ?4",

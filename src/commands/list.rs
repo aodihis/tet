@@ -15,6 +15,6 @@ pub fn run(conn: &Connection, group: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    tui::list_view::run(conn, snippets)?;
+    tui::list_view::run(conn, snippets, None)?;
     Ok(())
 }
