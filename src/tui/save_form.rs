@@ -13,6 +13,7 @@ use std::io;
 use super::TerminalGuard;
 use super::colors::{TN_BLUE, TN_DIM, TN_GREEN, TN_MUTED, TN_RED, TN_YELLOW};
 use crate::cli::RESERVED;
+use crate::models::Snippet;
 
 const MAX_GROUP_LEN: usize = 50;
 const MAX_NAME_LEN: usize = 50;
@@ -81,6 +82,21 @@ impl FormState {
             name_cursor: 0,
             commands: vec![cmd],
             cmd_cursors: vec![cursor],
+            cmd_sel: 0,
+            focus: Field::Group,
+            error: None,
+        }
+    }
+
+    pub(crate) fn from_snippet(snippet: &Snippet) -> Self {
+        let cmd_cursors = snippet.commands.iter().map(|c| c.chars().count()).collect();
+        Self {
+            group_cursor: snippet.group_name.chars().count(),
+            group: snippet.group_name.clone(),
+            name_cursor: snippet.name.chars().count(),
+            name: snippet.name.clone(),
+            commands: snippet.commands.clone(),
+            cmd_cursors,
             cmd_sel: 0,
             focus: Field::Group,
             error: None,
@@ -262,13 +278,19 @@ pub fn run(prefill: Option<String>) -> Result<Option<SaveFormResult>> {
     let _guard = TerminalGuard::new()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
+    run_loop(&mut terminal, FormState::new(prefill), false)
+}
 
-    let mut state = FormState::new(prefill);
+pub(crate) fn run_loop(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    mut state: FormState,
+    is_edit: bool,
+) -> Result<Option<SaveFormResult>> {
     let mut needs_draw = true;
 
     loop {
         if needs_draw {
-            terminal.draw(|f| draw(f, &state))?;
+            terminal.draw(|f| draw(f, &state, is_edit))?;
             needs_draw = false;
         }
 
@@ -349,15 +371,16 @@ pub fn run(prefill: Option<String>) -> Result<Option<SaveFormResult>> {
     }
 }
 
-fn draw(f: &mut ratatui::Frame, state: &FormState) {
+fn draw(f: &mut ratatui::Frame, state: &FormState, is_edit: bool) {
     let area = f.area();
 
+    let title = if is_edit { " tet — edit snippet " } else { " tet — save snippet " };
     let outer = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(TN_DIM))
         .title(Span::styled(
-            " tet — save snippet ",
+            title,
             Style::default().fg(TN_BLUE).add_modifier(Modifier::BOLD),
         ));
     f.render_widget(&outer, area);

@@ -14,6 +14,7 @@ use std::{collections::BTreeMap, io};
 
 use crate::db::ops;
 use crate::models::Snippet;
+use crate::tui::save_form::{self, FormState};
 use super::TerminalGuard;
 use super::colors::{TN_BLUE, TN_CYAN, TN_DIM, TN_GREEN, TN_MUTED, TN_ORANGE, TN_RED, TN_YELLOW};
 
@@ -46,6 +47,7 @@ impl GroupFilter {
 enum Focus {
     Groups,
     Snippets,
+    Preview,
     Search,
 }
 
@@ -73,6 +75,8 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
     let mut pending_delete: Option<usize> = None;
     let mut pending_group_delete = false;
     let mut group_total = count_in_group(&all, &groups[group_sel].0);
+    let mut notice: Option<String> = None;
+    let mut preview_cmd_sel: usize = 0;
 
     loop {
         group_list_state.select(Some(group_sel));
@@ -212,8 +216,10 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     Line::from(""),
                 ];
                 let text_w = cols[2].width.saturating_sub(2 + 6) as usize;
+                let sel_cmd = preview_cmd_sel.min(s.commands.len().saturating_sub(1));
                 for (i, cmd) in s.commands.iter().enumerate() {
-                    lines.extend(command_lines(i + 1, cmd, text_w));
+                    let highlighted = focus == Focus::Preview && i == sel_cmd;
+                    lines.extend(command_lines(i + 1, cmd, text_w, highlighted));
                 }
                 lines
             } else {
@@ -227,7 +233,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(TN_DIM))
+                            .border_style(pane_border(focus == Focus::Preview))
                             .title(Span::styled(
                                 " PREVIEW ",
                                 Style::default().add_modifier(Modifier::BOLD),
@@ -237,16 +243,20 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             );
 
             // ── Status bar ────────────────────────────────────────────────────
-            let status: String = if pending_delete.is_some() || pending_group_delete {
+            let status: String = if let Some(ref msg) = notice {
+                format!("  {}", msg)
+            } else if pending_delete.is_some() || pending_group_delete {
                 "  Y  confirm".to_string()
             } else if focus == Focus::Search {
                 "  Type to filter  [Enter/Esc] done".to_string()
             } else if !query.is_empty() {
-                "  ↑↓ nav  ↵ run  d delete snippet  / edit search  Esc clear  q quit".to_string()
+                "  ↑↓ nav  ↵ run  d delete  e edit  / edit search  Esc clear  q quit".to_string()
             } else if focus == Focus::Groups {
                 "  ↑↓ nav  d delete group  → enter  Tab switch  q quit".to_string()
+            } else if focus == Focus::Preview {
+                "  ↑↓ select command  Ctrl+C copy  ← back  q quit".to_string()
             } else {
-                "  ↑↓ nav  ↵ run  d delete snippet  / search  Tab switch  q quit".to_string()
+                "  ↑↓ nav  ↵ run  d delete  e edit  → preview  / search  Tab switch  q quit".to_string()
             };
             f.render_widget(
                 Paragraph::new(Span::styled(status, Style::default().fg(TN_MUTED))),
@@ -336,6 +346,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
         if matches!(ev, Event::Resize(..)) {
             continue; // loop top redraws
         }
+        notice = None;
         if let Event::Key(key) = ev {
             if key.kind != KeyEventKind::Press {
                 continue;
@@ -410,6 +421,18 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
             // Normal navigation
             match (key.code, key.modifiers) {
+                // Ctrl+C in Preview pane copies the selected command; elsewhere it quits
+                (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) && focus == Focus::Preview => {
+                    if let Some(&ai) = visible.get(snippet_sel) {
+                        let cmds = &all[ai].commands;
+                        let idx = preview_cmd_sel.min(cmds.len().saturating_sub(1));
+                        let text = cmds[idx].clone();
+                        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                            Ok(()) => notice = Some(format!("Copied command {}.", idx + 1)),
+                            Err(_)  => notice = Some("Copy failed.".into()),
+                        }
+                    }
+                }
                 (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => return Ok(None),
                 (KeyCode::Char('q'), _) => return Ok(None),
                 // Esc clears an active query before navigating or quitting
@@ -421,16 +444,28 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     group_total = count_in_group(&all, &groups[group_sel].0);
                 }
                 (KeyCode::Esc, _) if focus == Focus::Groups => return Ok(None),
+                (KeyCode::Esc, _) if focus == Focus::Preview => focus = Focus::Snippets,
                 (KeyCode::Esc, _) if focus == Focus::Snippets => focus = Focus::Groups,
                 (KeyCode::Char('/'), _) => focus = Focus::Search,
                 (KeyCode::Tab, _) => {
-                    focus = if focus == Focus::Groups { Focus::Snippets } else { Focus::Groups };
+                    focus = match focus {
+                        Focus::Groups   => Focus::Snippets,
+                        Focus::Snippets => Focus::Preview,
+                        Focus::Preview  => Focus::Groups,
+                        Focus::Search   => Focus::Snippets,
+                    };
                 }
                 (KeyCode::Right, _) | (KeyCode::Enter, _) if focus == Focus::Groups => {
                     if !visible.is_empty() {
                         focus = Focus::Snippets;
                     }
                 }
+                (KeyCode::Right, _) if focus == Focus::Snippets => {
+                    if !visible.is_empty() {
+                        focus = Focus::Preview;
+                    }
+                }
+                (KeyCode::Left, _) if focus == Focus::Preview => focus = Focus::Snippets,
                 (KeyCode::Left, _) if focus == Focus::Snippets => focus = Focus::Groups,
                 (KeyCode::Enter, _) if focus == Focus::Snippets => {
                     if let Some(&ai) = visible.get(snippet_sel) {
@@ -442,6 +477,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                         group_sel -= 1;
                         visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
                         snippet_sel = 0;
+                        preview_cmd_sel = 0;
                         group_total = count_in_group(&all, &groups[group_sel].0);
                     }
                 }
@@ -450,15 +486,53 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                         group_sel += 1;
                         visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
                         snippet_sel = 0;
+                        preview_cmd_sel = 0;
                         group_total = count_in_group(&all, &groups[group_sel].0);
                     }
                 }
                 (KeyCode::Up, _) if focus == Focus::Snippets => {
                     snippet_sel = snippet_sel.saturating_sub(1);
+                    preview_cmd_sel = 0;
                 }
                 (KeyCode::Down, _) if focus == Focus::Snippets => {
                     if snippet_sel + 1 < visible.len() {
                         snippet_sel += 1;
+                        preview_cmd_sel = 0;
+                    }
+                }
+                (KeyCode::Up, _) if focus == Focus::Preview => {
+                    preview_cmd_sel = preview_cmd_sel.saturating_sub(1);
+                }
+                (KeyCode::Down, _) if focus == Focus::Preview => {
+                    if let Some(&ai) = visible.get(snippet_sel) {
+                        if preview_cmd_sel + 1 < all[ai].commands.len() {
+                            preview_cmd_sel += 1;
+                        }
+                    }
+                }
+                (KeyCode::Char('e'), _) if focus == Focus::Snippets => {
+                    if let Some(&ai) = visible.get(snippet_sel) {
+                        let form_state = FormState::from_snippet(&all[ai]);
+                        if let Some(result) = save_form::run_loop(&mut terminal, form_state, true)? {
+                            let mut updated = all[ai].clone();
+                            updated.name = result.name;
+                            updated.group_name = result.group;
+                            updated.commands = result.commands;
+                            match ops::update_snippet(conn, &updated) {
+                                Ok(()) => {
+                                    all[ai] = updated;
+                                    composites[ai] = composite(&all[ai]);
+                                    let current_filter = groups[group_sel].0.clone();
+                                    (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
+                                    snippet_sel = snippet_sel.min(visible.len().saturating_sub(1));
+                                    group_total = count_in_group(&all, &groups[group_sel].0);
+                                    notice = Some("Saved.".into());
+                                }
+                                Err(e) => {
+                                    notice = Some(format!("Error: {}", e));
+                                }
+                            }
+                        }
                     }
                 }
                 (KeyCode::Char('d'), m)
@@ -572,14 +646,23 @@ fn compute_visible(
     scored.into_iter().map(|(_, i)| i).collect()
 }
 
-fn command_lines(num: usize, cmd: &str, text_w: usize) -> Vec<Line<'static>> {
-    let prefix = format!("  {:>2}  ", num);
+fn command_lines(num: usize, cmd: &str, text_w: usize, highlighted: bool) -> Vec<Line<'static>> {
+    let prefix = if highlighted {
+        format!("▶ {:>2}  ", num)
+    } else {
+        format!("  {:>2}  ", num)
+    };
     let indent = " ".repeat(prefix.len());
     let text_w = text_w.max(1);
+    let (num_color, text_color) = if highlighted {
+        (TN_YELLOW, Color::White)
+    } else {
+        (TN_MUTED, Color::Reset)
+    };
 
     let chars: Vec<char> = cmd.chars().collect();
     if chars.is_empty() {
-        return vec![Line::from(Span::styled(prefix, Style::default().fg(TN_MUTED)))];
+        return vec![Line::from(Span::styled(prefix, Style::default().fg(num_color)))];
     }
 
     let mut result = Vec::new();
@@ -591,19 +674,19 @@ fn command_lines(num: usize, cmd: &str, text_w: usize) -> Vec<Line<'static>> {
         let chunk: String = chars[start..end].iter().collect();
 
         if first {
-            let mut spans = vec![Span::styled(prefix.clone(), Style::default().fg(TN_MUTED))];
+            let mut spans = vec![Span::styled(prefix.clone(), Style::default().fg(num_color))];
             for (i, part) in chunk.split(" | ").enumerate() {
                 if i > 0 {
                     spans.push(Span::styled(" | ", Style::default().fg(TN_ORANGE)));
                 }
-                spans.push(Span::raw(part.to_string()));
+                spans.push(Span::styled(part.to_string(), Style::default().fg(text_color)));
             }
             result.push(Line::from(spans));
             first = false;
         } else {
             result.push(Line::from(vec![
-                Span::raw(indent.clone()),
-                Span::raw(chunk),
+                Span::styled(indent.clone(), Style::default().fg(num_color)),
+                Span::styled(chunk, Style::default().fg(text_color)),
             ]));
         }
 
