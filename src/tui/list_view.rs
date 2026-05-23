@@ -16,6 +16,16 @@ use crate::db::ops;
 use crate::models::Snippet;
 use super::TerminalGuard;
 
+// Tokyo Night palette
+const TN_BLUE: Color   = Color::Rgb(122, 162, 247); // #7AA2F7 — active border, title, highlight
+const TN_CYAN: Color   = Color::Rgb(125, 207, 255); // #7DCFFF — preview header
+const TN_ORANGE: Color = Color::Rgb(255, 158, 100); // #FF9E64 — pipe |
+const TN_YELLOW: Color = Color::Rgb(224, 175, 104); // #E0AF68 — search active
+const TN_GREEN: Color  = Color::Rgb(158, 206, 106); // #9ECE6A — active query indicator
+const TN_RED: Color    = Color::Rgb(247, 118, 142); // #F7768E — delete
+const TN_DIM: Color    = Color::Rgb(59,  66,  97);  // #3B4261 — inactive borders
+const TN_MUTED: Color  = Color::Rgb(86,  95,  137); // #565F89 — status, labels, line numbers
+
 #[derive(Clone, PartialEq)]
 enum GroupFilter {
     All,
@@ -88,16 +98,16 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             );
             let outer = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
+                .border_style(Style::default().fg(TN_DIM))
                 .title(
                     Line::from(Span::styled(
                         " tet ",
-                        Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD),
+                        Style::default().fg(TN_BLUE).add_modifier(Modifier::BOLD),
                     ))
                     .alignment(Alignment::Left),
                 )
                 .title(
-                    Line::from(Span::styled(count_str, Style::default().fg(Color::DarkGray)))
+                    Line::from(Span::styled(count_str, Style::default().fg(TN_MUTED)))
                         .alignment(Alignment::Right),
                 );
             let inner = outer.inner(area);
@@ -114,16 +124,16 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
             // ── Search bar ────────────────────────────────────────────────────
             let (search_text, search_style) = if focus == Focus::Search {
-                (format!("/ {}_", query), Style::default().fg(Color::Yellow))
+                (format!("/ {}_", query), Style::default().fg(TN_YELLOW))
             } else if !query.is_empty() {
                 (
                     format!("/ {}  [active — / to edit, Esc to clear]", query),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(TN_GREEN),
                 )
             } else {
                 (
                     "/ fuzzy search…  (name · command · group)".to_string(),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(TN_MUTED),
                 )
             };
             f.render_widget(
@@ -155,7 +165,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                         .border_style(pane_border(focus == Focus::Groups))
                         .title(Span::styled(" GROUPS ", Style::default().add_modifier(Modifier::BOLD))),
                 )
-                .highlight_style(Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().fg(TN_BLUE).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▶ ");
             f.render_stateful_widget(groups_list, cols[0], &mut group_list_state);
 
@@ -165,7 +175,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 .enumerate()
                 .map(|(vi, &ai)| {
                     let style = if pending_delete == Some(vi) {
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                        Style::default().fg(TN_RED).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     };
@@ -182,7 +192,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                             Style::default().add_modifier(Modifier::BOLD),
                         )),
                 )
-                .highlight_style(Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().fg(TN_BLUE).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▶ ");
             f.render_stateful_widget(snippets_list, cols[1], &mut snippet_list_state);
 
@@ -198,12 +208,12 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 let mut lines = vec![
                     Line::from(Span::styled(
                         format!(" {}", header),
-                        Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD),
+                        Style::default().fg(TN_CYAN).add_modifier(Modifier::BOLD),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(" sh · {} {}", s.commands.len(), line_word),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(TN_MUTED),
                     )),
                     Line::from(""),
                 ];
@@ -214,14 +224,14 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             } else {
                 vec![Line::from(Span::styled(
                     " No snippet selected",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(TN_MUTED),
                 ))]
             };
             f.render_widget(
                 Paragraph::new(preview_lines).block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::DarkGray))
+                        .border_style(Style::default().fg(TN_DIM))
                         .title(Span::styled(
                             " PREVIEW ",
                             Style::default().add_modifier(Modifier::BOLD),
@@ -239,7 +249,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 "  ↑↓ nav  ↵ run  d delete  / search  Tab switch pane  q quit"
             };
             f.render_widget(
-                Paragraph::new(Span::styled(status, Style::default().fg(Color::DarkGray))),
+                Paragraph::new(Span::styled(status, Style::default().fg(TN_MUTED))),
                 rows[2],
             );
         })?;
@@ -351,9 +361,9 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
 fn pane_border(active: bool) -> Style {
     if active {
-        Style::default().fg(Color::LightBlue)
+        Style::default().fg(TN_BLUE)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(TN_DIM)
     }
 }
 
@@ -407,11 +417,11 @@ fn compute_visible(
 fn command_line(num: usize, cmd: &str) -> Line<'static> {
     let mut spans = vec![Span::styled(
         format!("  {:>2}  ", num),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(TN_MUTED),
     )];
     for (i, part) in cmd.split(" | ").enumerate() {
         if i > 0 {
-            spans.push(Span::styled(" | ", Style::default().fg(Color::Yellow)));
+            spans.push(Span::styled(" | ", Style::default().fg(TN_ORANGE)));
         }
         spans.push(Span::raw(part.to_string()));
     }
