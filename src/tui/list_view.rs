@@ -3,7 +3,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
@@ -78,51 +78,57 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
         terminal.draw(|f| {
             let area = f.area();
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),
-                    Constraint::Length(1),
-                    Constraint::Min(0),
-                    Constraint::Length(1),
-                ])
-                .split(area);
 
-            // ── Title bar ─────────────────────────────────────────────────────
+            // ── Outer border ──────────────────────────────────────────────────
             let count_str = format!(
-                "{}  ·  {}/{}",
+                " {}  ·  {}/{} ",
                 groups[group_sel].0.label(),
                 visible.len(),
                 all.len()
             );
-            let pad = (area.width as usize).saturating_sub(6 + count_str.len() + 2);
-            f.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled("  tet ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::raw(" ".repeat(pad)),
-                    Span::styled(count_str, Style::default().fg(Color::DarkGray)),
-                    Span::raw("  "),
-                ])),
-                rows[0],
-            );
+            let outer = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(
+                    Line::from(Span::styled(
+                        " tet ",
+                        Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD),
+                    ))
+                    .alignment(Alignment::Left),
+                )
+                .title(
+                    Line::from(Span::styled(count_str, Style::default().fg(Color::DarkGray)))
+                        .alignment(Alignment::Right),
+                );
+            let inner = outer.inner(area);
+            f.render_widget(outer, area);
+
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
 
             // ── Search bar ────────────────────────────────────────────────────
             let (search_text, search_style) = if focus == Focus::Search {
-                (format!("  / {}_", query), Style::default().fg(Color::Yellow))
+                (format!("/ {}_", query), Style::default().fg(Color::Yellow))
             } else if !query.is_empty() {
                 (
-                    format!("  / {}  [active — / to edit, Esc to clear]", query),
+                    format!("/ {}  [active — / to edit, Esc to clear]", query),
                     Style::default().fg(Color::Green),
                 )
             } else {
                 (
-                    "  / fuzzy search…  (name · command · group)".to_string(),
+                    "/ fuzzy search…  (name · command · group)".to_string(),
                     Style::default().fg(Color::DarkGray),
                 )
             };
             f.render_widget(
                 Paragraph::new(Span::styled(search_text, search_style)),
-                rows[1],
+                rows[0],
             );
 
             // ── Three panes ───────────────────────────────────────────────────
@@ -133,7 +139,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     Constraint::Percentage(35),
                     Constraint::Fill(1),
                 ])
-                .split(rows[2]);
+                .split(rows[1]);
 
             // Groups pane
             let group_items: Vec<ListItem> = groups
@@ -149,7 +155,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                         .border_style(pane_border(focus == Focus::Groups))
                         .title(Span::styled(" GROUPS ", Style::default().add_modifier(Modifier::BOLD))),
                 )
-                .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▶ ");
             f.render_stateful_widget(groups_list, cols[0], &mut group_list_state);
 
@@ -176,7 +182,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                             Style::default().add_modifier(Modifier::BOLD),
                         )),
                 )
-                .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▶ ");
             f.render_stateful_widget(snippets_list, cols[1], &mut snippet_list_state);
 
@@ -192,7 +198,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 let mut lines = vec![
                     Line::from(Span::styled(
                         format!(" {}", header),
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
@@ -234,7 +240,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             };
             f.render_widget(
                 Paragraph::new(Span::styled(status, Style::default().fg(Color::DarkGray))),
-                rows[3],
+                rows[2],
             );
         })?;
 
@@ -345,7 +351,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
 fn pane_border(active: bool) -> Style {
     if active {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(Color::LightBlue)
     } else {
         Style::default().fg(Color::DarkGray)
     }
