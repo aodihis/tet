@@ -370,16 +370,16 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>, prefill_query: Option<Stri
 
             // Snippet delete confirmation
             if let Some(vi) = pending_delete {
-                if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
-                    if let Some(&ai) = visible.get(vi) {
-                        ops::delete_snippet(conn, all[ai].id)?;
-                        all.remove(ai);
-                        composites.remove(ai);
-                        let current_filter = groups[group_sel].0.clone();
-                        (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
-                        snippet_sel = snippet_sel.min(visible.len().saturating_sub(1));
-                        group_total = count_in_group(&all, &groups[group_sel].0);
-                    }
+                if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y'))
+                    && let Some(&ai) = visible.get(vi)
+                {
+                    ops::delete_snippet(conn, all[ai].id)?;
+                    all.remove(ai);
+                    composites.remove(ai);
+                    let current_filter = groups[group_sel].0.clone();
+                    (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
+                    snippet_sel = snippet_sel.min(visible.len().saturating_sub(1));
+                    group_total = count_in_group(&all, &groups[group_sel].0);
                 }
                 pending_delete = None;
                 continue;
@@ -501,10 +501,10 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>, prefill_query: Option<Stri
                     preview_cmd_sel = preview_cmd_sel.saturating_sub(1);
                 }
                 (KeyCode::Down, _) if focus == Focus::Preview => {
-                    if let Some(&ai) = visible.get(snippet_sel) {
-                        if preview_cmd_sel + 1 < all[ai].commands.len() {
-                            preview_cmd_sel += 1;
-                        }
+                    if let Some(&ai) = visible.get(snippet_sel)
+                        && preview_cmd_sel + 1 < all[ai].commands.len()
+                    {
+                        preview_cmd_sel += 1;
                     }
                 }
                 (KeyCode::Char('e'), _) if focus == Focus::Snippets => {

@@ -103,18 +103,6 @@ impl FormState {
         }
     }
 
-    pub(crate) fn current_cmd_mut(&mut self) -> &mut String {
-        &mut self.commands[self.cmd_sel]
-    }
-
-    pub(crate) fn active_field_mut(&mut self) -> Option<&mut String> {
-        match self.focus {
-            Field::Group    => Some(&mut self.group),
-            Field::Name     => Some(&mut self.name),
-            Field::Commands => None,
-        }
-    }
-
     pub(crate) fn add_command(&mut self) {
         self.cmd_sel += 1;
         self.commands.insert(self.cmd_sel, String::new());
@@ -395,7 +383,7 @@ fn draw(f: &mut ratatui::Frame, state: &FormState, is_edit: bool) {
     let cmd_content_h: u16 = state.commands.iter()
         .map(|cmd| {
             let n = cmd.chars().count().max(1);
-            ((n + cmd_text_w - 1) / cmd_text_w).max(1) as u16
+            n.div_ceil(cmd_text_w).max(1) as u16
         })
         .sum::<u16>()
         .clamp(1, 12);
@@ -516,7 +504,7 @@ fn render_commands(f: &mut ratatui::Frame, area: Rect, state: &FormState) {
     let cmd_heights: Vec<usize> = state.commands.iter()
         .map(|cmd| {
             let n = cmd.chars().count().max(1);
-            (n + text_w - 1) / text_w
+            n.div_ceil(text_w)
         })
         .collect();
 

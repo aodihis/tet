@@ -14,14 +14,14 @@ pub fn insert_snippet(
     )
     .map(|_| ())
     .map_err(|e| {
-        if let rusqlite::Error::SqliteFailure(ref err, _) = e {
-            if err.code == rusqlite::ErrorCode::ConstraintViolation {
-                return anyhow::anyhow!(
-                    "Snippet '{}' already exists{}",
-                    name,
-                    if group_name.is_empty() { String::new() } else { format!(" in group '{}'", group_name) }
-                );
-            }
+        if let rusqlite::Error::SqliteFailure(ref err, _) = e
+            && err.code == rusqlite::ErrorCode::ConstraintViolation
+        {
+            return anyhow::anyhow!(
+                "Snippet '{}' already exists{}",
+                name,
+                if group_name.is_empty() { String::new() } else { format!(" in group '{}'", group_name) }
+            );
         }
         anyhow::anyhow!("Failed to insert snippet: {}", e)
     })
