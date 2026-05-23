@@ -363,8 +363,8 @@ fn draw(f: &mut ratatui::Frame, state: &FormState) {
     f.render_widget(&outer, area);
     let inner = outer.inner(area);
 
-    let form_width = 70u16.min(inner.width);
-    // left col: Group + Name stacked; right col: Commands
+    // left col: Group + Name stacked; right col: Commands — use full available width
+    let form_width = inner.width;
     let left_w = 28u16.min(form_width * 2 / 5);
     let right_w = form_width.saturating_sub(left_w + 2);
 
@@ -390,16 +390,7 @@ fn draw(f: &mut ratatui::Frame, state: &FormState) {
             Constraint::Min(0),
         ])
         .split(inner);
-    let hpad = inner.width.saturating_sub(form_width) / 2;
-    let horiz = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(hpad),
-            Constraint::Length(form_width),
-            Constraint::Min(0),
-        ])
-        .split(vert[1]);
-    let form_area = horiz[1];
+    let form_area = vert[1];
 
     let form_rows = Layout::default()
         .direction(Direction::Vertical)
