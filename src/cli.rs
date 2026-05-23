@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
 pub const RESERVED: &[&str] = &[
-    "save", "last", "list", "ls", "search", "find",
-    "delete", "del", "rm", "help", "run",
+    "save", "save-last", "list", "ls", "search", "find",
+    "delete", "del", "rm", "help", "run", "shell",
 ];
 
 #[derive(Parser)]
@@ -27,7 +27,7 @@ pub enum Command {
         cmd: Vec<String>,
     },
     /// Save the last shell command as a snippet
-    Last,
+    SaveLast,
     /// List snippets; optionally filter by group name
     List {
         group: Option<String>,

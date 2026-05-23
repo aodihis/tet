@@ -56,19 +56,22 @@ Aliases: `tet del`, `tet rm`
 
 ### Save last shell command
 
-First, install the shell hook:
 ```
+tet save-last
+```
+
+Opens the save form with the previous command pre-filled.
+
+**Windows (PowerShell):** works out of the box — reads your PowerShell history automatically. No setup needed.
+
+**bash / zsh:** requires a one-time shell hook install so `tet` knows what your last command was:
+
+```bash
 tet shell bash >> ~/.bashrc   # bash
 tet shell zsh  >> ~/.zshrc    # zsh
-tet shell pwsh >> $PROFILE    # powershell
 ```
 
-Then:
-```
-tet last
-```
-
-This opens the save form with the previous command pre-filled.
+Restart your shell after installing. The hook runs silently in the background and writes your last command to a temp file before each prompt.
 
 ## Data storage
 
@@ -79,15 +82,4 @@ Snippets are stored in SQLite at:
 ## Reserved words
 
 These cannot be used as shortcut names:
-`save`, `last`, `list`, `ls`, `search`, `find`, `delete`, `del`, `rm`, `help`, `run`, `-`
-
-## Development phases
-
-| Phase | Status |
-|-------|--------|
-| 1 — Foundation | ✓ |
-| 2 — Core CRUD (non-interactive) | ✓ |
-| 3 — TUI list with search | ✓ |
-| 4 — Interactive save form | ✓ |
-| 5 — Run shortcuts + fuzzy fallback | pending |
-| 6 — Advanced features | pending |
+`save`, `save-last`, `list`, `ls`, `search`, `find`, `delete`, `del`, `rm`, `help`, `run`, `shell`, `-`

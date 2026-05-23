@@ -19,11 +19,11 @@ fn main() -> Result<()> {
         Some(Command::Delete { group, name }) => {
             tet::commands::delete::run(&conn, &group, &name)?;
         }
-        Some(Command::Last) => {
-            todo!("tet last — Phase 6")
+        Some(Command::SaveLast) => {
+            tet::commands::save_last::run(&conn)?;
         }
-        Some(Command::Shell { .. }) => {
-            todo!("tet shell — Phase 6")
+        Some(Command::Shell { shell }) => {
+            tet::shell::print_hook(&shell)?;
         }
         None => match args.run_args.as_slice() {
             [name] => tet::commands::run::run(&conn, "", name)?,
