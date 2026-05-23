@@ -14,7 +14,8 @@ use super::TerminalGuard;
 use super::colors::{TN_BLUE, TN_DIM, TN_GREEN, TN_MUTED, TN_RED, TN_YELLOW};
 use crate::cli::RESERVED;
 
-const MAX_NAME_LEN: usize = 200;
+const MAX_GROUP_LEN: usize = 50;
+const MAX_NAME_LEN: usize = 50;
 const MAX_CMD_LEN: usize = 10_000;
 
 fn active_colors(active: bool) -> (Color, Color) {
@@ -150,7 +151,7 @@ impl FormState {
     pub(crate) fn insert_char(&mut self, c: char) {
         match self.focus {
             Field::Group => {
-                if self.group.chars().count() < MAX_NAME_LEN {
+                if self.group.chars().count() < MAX_GROUP_LEN {
                     let byte = char_to_byte(&self.group, self.group_cursor);
                     self.group.insert(byte, c);
                     self.group_cursor += 1;
@@ -221,8 +222,8 @@ impl FormState {
             return Err("Name: letters, numbers, - and _ only".into());
         }
         if !group.is_empty() {
-            if group.len() > MAX_NAME_LEN {
-                return Err(format!("Group must be {} characters or fewer", MAX_NAME_LEN));
+            if group.len() > MAX_GROUP_LEN {
+                return Err(format!("Group must be {} characters or fewer", MAX_GROUP_LEN));
             }
             if RESERVED.contains(&group) {
                 return Err(format!("'{}' is a reserved word", group));
@@ -363,8 +364,11 @@ fn draw(f: &mut ratatui::Frame, state: &FormState) {
     let inner = outer.inner(area);
 
     let form_width = 70u16.min(inner.width);
-    // text_w: inner width minus 2 block borders minus 2-char prefix ("▶ ")
-    let cmd_text_w = form_width.saturating_sub(4).max(1) as usize;
+    // left col: Group + Name stacked; right col: Commands
+    let left_w = 28u16.min(form_width * 2 / 5);
+    let right_w = form_width.saturating_sub(left_w + 2);
+
+    let cmd_text_w = right_w.saturating_sub(4).max(1) as usize;
     let cmd_content_h: u16 = state.commands.iter()
         .map(|cmd| {
             let n = cmd.chars().count().max(1);
@@ -372,8 +376,10 @@ fn draw(f: &mut ratatui::Frame, state: &FormState) {
         })
         .sum::<u16>()
         .clamp(1, 12);
-    let cmd_box_h = cmd_content_h + 2;
-    let form_height = 3 + 1 + 3 + 1 + cmd_box_h + 1 + 2;
+
+    // col_h: both columns share the same height; at least tall enough for Group+gap+Name
+    let col_h = (cmd_content_h + 2).max(7); // 7 = Group(3) + gap(1) + Name(3)
+    let form_height = col_h + 1 + 2;         // col + gap + status
     let vpad = inner.height.saturating_sub(form_height) / 2;
 
     let vert = Layout::default()
@@ -393,32 +399,53 @@ fn draw(f: &mut ratatui::Frame, state: &FormState) {
             Constraint::Min(0),
         ])
         .split(vert[1]);
-    let col = horiz[1];
+    let form_area = horiz[1];
 
-    let rows = Layout::default()
+    let form_rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),         // Group
+            Constraint::Length(col_h),
             Constraint::Length(1),
-            Constraint::Length(3),         // Name
-            Constraint::Length(1),
-            Constraint::Length(cmd_box_h), // Commands
-            Constraint::Length(1),
-            Constraint::Min(2),            // status
+            Constraint::Min(2),
         ])
-        .split(col);
+        .split(form_area);
 
-    render_field(f, rows[0], "Group  (optional)", &state.group, state.focus == Field::Group, state.group_cursor);
-    render_field(f, rows[2], "Name", &state.name, state.focus == Field::Name, state.name_cursor);
-    render_commands(f, rows[4], state);
-    render_status(f, rows[6], state);
+    let form_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(left_w),
+            Constraint::Length(2),
+            Constraint::Length(right_w),
+        ])
+        .split(form_rows[0]);
+
+    // Left column: Group at top, Name below, blank remainder
+    let left_col = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(form_cols[0]);
+
+    render_field(f, left_col[0], "Group", &state.group, state.focus == Field::Group, state.group_cursor, MAX_GROUP_LEN);
+    render_field(f, left_col[2], "Name",  &state.name,  state.focus == Field::Name,  state.name_cursor,  MAX_NAME_LEN);
+    render_commands(f, form_cols[2], state);
+    render_status(f, form_rows[2], state);
 }
 
-fn render_field(f: &mut ratatui::Frame, area: Rect, label: &str, value: &str, active: bool, cursor_pos: usize) {
+fn render_field(f: &mut ratatui::Frame, area: Rect, label: &str, value: &str, active: bool, cursor_pos: usize, max_len: usize) {
     let (border_color, title_color) = active_colors(active);
     let inner_w = area.width.saturating_sub(2) as usize;
-    // scroll so cursor stays visible: cursor renders at col (1 + cursor_pos - h_scroll)
     let h_scroll = (cursor_pos + 2).saturating_sub(inner_w) as u16;
+
+    let title = if active {
+        format!(" {}  {}/{} ", label, value.chars().count(), max_len)
+    } else {
+        format!(" {} ", label)
+    };
 
     let line = if active {
         let byte = char_to_byte(value, cursor_pos);
@@ -439,7 +466,7 @@ fn render_field(f: &mut ratatui::Frame, area: Rect, label: &str, value: &str, ac
                 .border_type(if active { BorderType::Rounded } else { BorderType::Plain })
                 .border_style(Style::default().fg(border_color))
                 .title(Span::styled(
-                    format!(" {} ", label),
+                    title,
                     Style::default().fg(title_color)
                         .add_modifier(if active { Modifier::BOLD } else { Modifier::empty() }),
                 )),
