@@ -1,9 +1,5 @@
 use anyhow::Result;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::{
     backend::CrosstermBackend,
@@ -17,23 +13,7 @@ use std::io;
 
 use crate::db::ops;
 use crate::models::Snippet;
-
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn new() -> Result<Self> {
-        enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen)?;
-        Ok(Self)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
-    }
-}
+use super::TerminalGuard;
 
 pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>> {
     let _guard = TerminalGuard::new()?;
@@ -42,15 +22,17 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
     let matcher = SkimMatcherV2::default();
     let mut all = snippets;
+    let mut composites: Vec<String> = all.iter().map(composite).collect();
     let mut query = String::new();
-    let mut filtered = make_filtered(&all, &query, &matcher);
+    let mut filtered = make_filtered(&composites, &query, &matcher);
     let mut selected: usize = 0;
-    let mut confirm_delete = false;
+    // captured filtered-index at 'd' press; prevents wrong-item deletion if selection shifts
+    let mut pending_delete: Option<usize> = None;
     let mut list_state = ListState::default();
 
     loop {
-        let (items, display_selected) = build_display(&all, &filtered, selected, confirm_delete);
-        list_state.select(if filtered.is_empty() { None } else { Some(display_selected) });
+        let (items, display_sel) = build_display(&all, &filtered, selected, pending_delete);
+        list_state.select(display_sel);
 
         terminal.draw(|f| {
             let area = f.area();
@@ -73,7 +55,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 .highlight_symbol("> ");
             f.render_stateful_widget(list, chunks[1], &mut list_state);
 
-            let hint = if confirm_delete {
+            let hint = if pending_delete.is_some() {
                 " [y] Confirm delete  [n/Esc] Cancel"
             } else {
                 " [Enter] Run  [d] Delete  [Esc] Quit"
@@ -87,16 +69,17 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 continue;
             }
 
-            if confirm_delete {
+            if let Some(fi) = pending_delete {
                 if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
-                    if let Some(&idx) = filtered.get(selected) {
+                    if let Some(&idx) = filtered.get(fi) {
                         ops::delete_snippet(conn, all[idx].id)?;
                         all.remove(idx);
-                        filtered = make_filtered(&all, &query, &matcher);
+                        composites.remove(idx);
+                        filtered = make_filtered(&composites, &query, &matcher);
                         selected = selected.min(filtered.len().saturating_sub(1));
                     }
                 }
-                confirm_delete = false;
+                pending_delete = None;
                 continue;
             }
 
@@ -112,7 +95,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 }
                 (KeyCode::Char('d'), m) if !m.contains(KeyModifiers::CONTROL) => {
                     if !filtered.is_empty() {
-                        confirm_delete = true;
+                        pending_delete = Some(selected);
                     }
                 }
                 (KeyCode::Up, _) => {
@@ -125,13 +108,15 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 }
                 (KeyCode::Backspace, _) => {
                     query.pop();
-                    filtered = make_filtered(&all, &query, &matcher);
+                    filtered = make_filtered(&composites, &query, &matcher);
                     selected = selected.min(filtered.len().saturating_sub(1));
                 }
                 (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) => {
-                    query.push(c);
-                    filtered = make_filtered(&all, &query, &matcher);
-                    selected = 0;
+                    if query.len() < 200 {
+                        query.push(c);
+                        filtered = make_filtered(&composites, &query, &matcher);
+                        selected = 0;
+                    }
                 }
                 _ => {}
             }
@@ -147,14 +132,14 @@ fn composite(s: &Snippet) -> String {
     }
 }
 
-fn make_filtered(all: &[Snippet], query: &str, matcher: &SkimMatcherV2) -> Vec<usize> {
+fn make_filtered(composites: &[String], query: &str, matcher: &SkimMatcherV2) -> Vec<usize> {
     if query.is_empty() {
-        return (0..all.len()).collect();
+        return (0..composites.len()).collect();
     }
-    let mut scored: Vec<(i64, usize)> = all
+    let mut scored: Vec<(i64, usize)> = composites
         .iter()
         .enumerate()
-        .filter_map(|(i, s)| matcher.fuzzy_match(&composite(s), query).map(|score| (score, i)))
+        .filter_map(|(i, c)| matcher.fuzzy_match(c, query).map(|score| (score, i)))
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0));
     scored.into_iter().map(|(_, i)| i).collect()
@@ -164,10 +149,11 @@ fn build_display(
     all: &[Snippet],
     filtered: &[usize],
     selected: usize,
-    confirm_delete: bool,
-) -> (Vec<ListItem<'static>>, usize) {
+    pending_delete: Option<usize>,
+) -> (Vec<ListItem<'static>>, Option<usize>) {
+    let name_w = filtered.iter().map(|&i| all[i].name.len()).max().unwrap_or(0).max(10);
     let mut items: Vec<ListItem<'static>> = Vec::new();
-    let mut display_selected = 0usize;
+    let mut display_selected: Option<usize> = None;
     let mut current_group: Option<String> = None;
 
     for (fi, &ai) in filtered.iter().enumerate() {
@@ -183,17 +169,17 @@ fn build_display(
             current_group = Some(grp.to_string());
         }
 
-        if fi == selected {
-            display_selected = items.len();
+        if fi == selected && pending_delete.is_none() {
+            display_selected = Some(items.len());
         }
 
         let cmds = s.commands.join(" | ");
-        let style = if fi == selected && confirm_delete {
+        let style = if pending_delete == Some(fi) {
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
-        items.push(ListItem::new(format!("  {:<20}  {}", s.name, cmds)).style(style));
+        items.push(ListItem::new(format!("  {:<name_w$}  {}", s.name, cmds)).style(style));
     }
 
     (items, display_selected)
