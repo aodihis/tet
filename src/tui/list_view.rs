@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
 use rusqlite::Connection;
@@ -15,16 +15,7 @@ use std::{collections::BTreeMap, io};
 use crate::db::ops;
 use crate::models::Snippet;
 use super::TerminalGuard;
-
-// Tokyo Night palette
-const TN_BLUE: Color   = Color::Rgb(122, 162, 247); // #7AA2F7 — active border, title, highlight
-const TN_CYAN: Color   = Color::Rgb(125, 207, 255); // #7DCFFF — preview header
-const TN_ORANGE: Color = Color::Rgb(255, 158, 100); // #FF9E64 — pipe |
-const TN_YELLOW: Color = Color::Rgb(224, 175, 104); // #E0AF68 — search active
-const TN_GREEN: Color  = Color::Rgb(158, 206, 106); // #9ECE6A — active query indicator
-const TN_RED: Color    = Color::Rgb(247, 118, 142); // #F7768E — delete
-const TN_DIM: Color    = Color::Rgb(59,  66,  97);  // #3B4261 — inactive borders
-const TN_MUTED: Color  = Color::Rgb(86,  95,  137); // #565F89 — status, labels, line numbers
+use super::colors::{TN_BLUE, TN_CYAN, TN_DIM, TN_GREEN, TN_MUTED, TN_ORANGE, TN_RED, TN_YELLOW};
 
 #[derive(Clone, PartialEq)]
 enum GroupFilter {
@@ -231,21 +222,23 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 ))]
             };
             f.render_widget(
-                Paragraph::new(preview_lines).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(TN_DIM))
-                        .title(Span::styled(
-                            " PREVIEW ",
-                            Style::default().add_modifier(Modifier::BOLD),
-                        )),
-                ),
+                Paragraph::new(preview_lines)
+                    .wrap(Wrap { trim: false })
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(TN_DIM))
+                            .title(Span::styled(
+                                " PREVIEW ",
+                                Style::default().add_modifier(Modifier::BOLD),
+                            )),
+                    ),
                 cols[2],
             );
 
             // ── Status bar ────────────────────────────────────────────────────
             let status: String = if pending_delete.is_some() || pending_group_delete {
-                "  Y  confirm  ·  N / Esc  cancel".to_string()
+                "  Y  confirm".to_string()
             } else if focus == Focus::Search {
                 "  Type to filter  [Enter/Esc] done".to_string()
             } else if !query.is_empty() {
@@ -317,17 +310,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                             "  Yes, delete forever",
                             Style::default().fg(TN_RED).add_modifier(Modifier::BOLD),
                         ),
-                    ]),
-                    Line::from(""),
-                    Line::from(vec![
-                        Span::raw("    "),
-                        Span::styled(
-                            "  N  ",
-                            Style::default().bg(TN_DIM).fg(TN_MUTED),
-                        ),
-                        Span::styled("  Cancel", Style::default().fg(TN_MUTED)),
-                    ]),
-                    Line::from(""),
+                    ])
                 ]);
 
                 f.render_widget(
@@ -349,7 +332,11 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
         })?;
 
         // ── Events ────────────────────────────────────────────────────────────
-        if let Event::Key(key) = event::read()? {
+        let ev = event::read()?;
+        if matches!(ev, Event::Resize(..)) {
+            continue; // loop top redraws
+        }
+        if let Event::Key(key) = ev {
             if key.kind != KeyEventKind::Press {
                 continue;
             }

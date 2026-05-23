@@ -4,6 +4,17 @@ use rusqlite::Connection;
 use crate::cli::RESERVED;
 use crate::db::ops;
 use crate::models::display_name;
+use crate::tui::save_form;
+
+pub fn run_interactive(conn: &Connection, prefill: Option<String>) -> Result<()> {
+    match save_form::run(prefill)? {
+        None => println!("Cancelled."),
+        Some(result) => {
+            run_noninteractive(conn, result.group, result.name, result.commands)?;
+        }
+    }
+    Ok(())
+}
 
 pub fn run_noninteractive(
     conn: &Connection,

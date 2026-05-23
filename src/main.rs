@@ -10,8 +10,8 @@ fn main() -> Result<()> {
         Some(Command::Save { group, name: Some(name), cmd }) => {
             tet::commands::save::run_noninteractive(&conn, group, name, cmd)?;
         }
-        Some(Command::Save { .. }) => {
-            todo!("Interactive save — Phase 4")
+        Some(Command::Save { name: None, .. }) => {
+            tet::commands::save::run_interactive(&conn, None)?;
         }
         Some(Command::List { group }) => {
             tet::commands::list::run(&conn, group)?;
