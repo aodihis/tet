@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use rusqlite::Connection;
@@ -211,8 +211,9 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     )),
                     Line::from(""),
                 ];
+                let text_w = cols[2].width.saturating_sub(2 + 6) as usize;
                 for (i, cmd) in s.commands.iter().enumerate() {
-                    lines.push(command_line(i + 1, cmd));
+                    lines.extend(command_lines(i + 1, cmd, text_w));
                 }
                 lines
             } else {
@@ -223,7 +224,6 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             };
             f.render_widget(
                 Paragraph::new(preview_lines)
-                    .wrap(Wrap { trim: false })
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
@@ -572,16 +572,42 @@ fn compute_visible(
     scored.into_iter().map(|(_, i)| i).collect()
 }
 
-fn command_line(num: usize, cmd: &str) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("  {:>2}  ", num),
-        Style::default().fg(TN_MUTED),
-    )];
-    for (i, part) in cmd.split(" | ").enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" | ", Style::default().fg(TN_ORANGE)));
-        }
-        spans.push(Span::raw(part.to_string()));
+fn command_lines(num: usize, cmd: &str, text_w: usize) -> Vec<Line<'static>> {
+    let prefix = format!("  {:>2}  ", num);
+    let indent = " ".repeat(prefix.len());
+    let text_w = text_w.max(1);
+
+    let chars: Vec<char> = cmd.chars().collect();
+    if chars.is_empty() {
+        return vec![Line::from(Span::styled(prefix, Style::default().fg(TN_MUTED)))];
     }
-    Line::from(spans)
+
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut first = true;
+
+    while start < chars.len() {
+        let end = (start + text_w).min(chars.len());
+        let chunk: String = chars[start..end].iter().collect();
+
+        if first {
+            let mut spans = vec![Span::styled(prefix.clone(), Style::default().fg(TN_MUTED))];
+            for (i, part) in chunk.split(" | ").enumerate() {
+                if i > 0 {
+                    spans.push(Span::styled(" | ", Style::default().fg(TN_ORANGE)));
+                }
+                spans.push(Span::raw(part.to_string()));
+            }
+            result.push(Line::from(spans));
+            first = false;
+        } else {
+            result.push(Line::from(vec![
+                Span::raw(indent.clone()),
+                Span::raw(chunk),
+            ]));
+        }
+
+        start = end;
+    }
+    result
 }
