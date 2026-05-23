@@ -78,6 +78,16 @@ pub fn delete_snippet(conn: &Connection, id: u16) -> Result<bool> {
         .context("Failed to delete snippet")
 }
 
+pub fn delete_by_group(conn: &Connection, group_name: &str) -> Result<usize> {
+    conn.execute("DELETE FROM snippets WHERE group_name = ?1", [group_name])
+        .context("Failed to delete group snippets")
+}
+
+pub fn delete_all(conn: &Connection) -> Result<usize> {
+    conn.execute("DELETE FROM snippets", [])
+        .context("Failed to delete all snippets")
+}
+
 pub fn update_snippet(conn: &Connection, snippet: &Snippet) -> Result<()> {
     conn.execute(
         "UPDATE snippets SET name = ?1, group_name = ?2, commands = ?3 WHERE id = ?4",
@@ -366,6 +376,57 @@ mod tests {
         let s = get_snippet(&conn, "", "ping").unwrap().unwrap();
         assert!(delete_snippet(&conn, s.id).unwrap());
         assert!(!delete_snippet(&conn, s.id).unwrap());
+    }
+
+    // ── delete_by_group / delete_all ─────────────────────────────────────────
+
+    #[test]
+    fn delete_by_group_removes_all_in_group() {
+        let conn = setup();
+        insert_snippet(&conn, "a", "home", &cmds(&["a"])).unwrap();
+        insert_snippet(&conn, "b", "home", &cmds(&["b"])).unwrap();
+        insert_snippet(&conn, "c", "work", &cmds(&["c"])).unwrap();
+        let removed = delete_by_group(&conn, "home").unwrap();
+        assert_eq!(removed, 2);
+        assert!(list_by_group(&conn, "home").unwrap().is_empty());
+        assert_eq!(list_by_group(&conn, "work").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_by_group_ungrouped() {
+        let conn = setup();
+        insert_snippet(&conn, "free1", "", &cmds(&["a"])).unwrap();
+        insert_snippet(&conn, "free2", "", &cmds(&["b"])).unwrap();
+        insert_snippet(&conn, "kept", "home", &cmds(&["c"])).unwrap();
+        let removed = delete_by_group(&conn, "").unwrap();
+        assert_eq!(removed, 2);
+        assert!(list_by_group(&conn, "").unwrap().is_empty());
+        assert_eq!(list_by_group(&conn, "home").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_by_group_nonexistent_returns_zero() {
+        let conn = setup();
+        insert_snippet(&conn, "ping", "home", &cmds(&["ping"])).unwrap();
+        assert_eq!(delete_by_group(&conn, "ghost").unwrap(), 0);
+        assert_eq!(list_all(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_all_clears_everything() {
+        let conn = setup();
+        insert_snippet(&conn, "a", "",     &cmds(&["a"])).unwrap();
+        insert_snippet(&conn, "b", "home", &cmds(&["b"])).unwrap();
+        insert_snippet(&conn, "c", "work", &cmds(&["c"])).unwrap();
+        let removed = delete_all(&conn).unwrap();
+        assert_eq!(removed, 3);
+        assert!(list_all(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_all_on_empty_db_returns_zero() {
+        let conn = setup();
+        assert_eq!(delete_all(&conn).unwrap(), 0);
     }
 
     // ── update ────────────────────────────────────────────────────────────────

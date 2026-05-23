@@ -278,6 +278,56 @@ fn concurrent_reads_and_writes_are_consistent() {
     assert_eq!(ops::list_all(&conn).unwrap().len(), 10);
 }
 
+// ── group delete ─────────────────────────────────────────────────────────────
+
+#[test]
+fn delete_by_group_removes_only_that_group() {
+    let (_dir, conn) = temp_conn();
+    do_save(&conn, "docker", "build",   "docker build .");
+    do_save(&conn, "docker", "exec-it", "docker run app");
+    do_save(&conn, "git",    "log",     "git log");
+    do_save(&conn, "",       "ping",    "ping 8.8.8.8");
+
+    ops::delete_by_group(&conn, "docker").unwrap();
+
+    assert!(ops::list_by_group(&conn, "docker").unwrap().is_empty());
+    assert_eq!(ops::list_by_group(&conn, "git").unwrap().len(), 1);
+    assert_eq!(ops::list_by_group(&conn, "").unwrap().len(), 1);
+}
+
+#[test]
+fn delete_ungrouped_leaves_named_groups() {
+    let (_dir, conn) = temp_conn();
+    do_save(&conn, "",     "ping", "ping 8.8.8.8");
+    do_save(&conn, "",     "myip", "curl ifconfig.me");
+    do_save(&conn, "home", "dns",  "nslookup google.com");
+
+    let removed = ops::delete_by_group(&conn, "").unwrap();
+    assert_eq!(removed, 2);
+    assert!(ops::list_by_group(&conn, "").unwrap().is_empty());
+    assert_eq!(ops::list_by_group(&conn, "home").unwrap().len(), 1);
+}
+
+#[test]
+fn delete_all_clears_entire_database() {
+    let (_dir, conn) = temp_conn();
+    do_save(&conn, "",     "ping",  "ping 8.8.8.8");
+    do_save(&conn, "home", "dns",   "nslookup");
+    do_save(&conn, "work", "proxy", "curl -x proxy:8080");
+
+    let removed = ops::delete_all(&conn).unwrap();
+    assert_eq!(removed, 3);
+    assert!(ops::list_all(&conn).unwrap().is_empty());
+}
+
+#[test]
+fn delete_nonexistent_group_returns_zero() {
+    let (_dir, conn) = temp_conn();
+    do_save(&conn, "home", "ping", "ping");
+    assert_eq!(ops::delete_by_group(&conn, "ghost").unwrap(), 0);
+    assert_eq!(ops::list_all(&conn).unwrap().len(), 1);
+}
+
 // ── TET_DATA_DIR env var ──────────────────────────────────────────────────────
 
 #[test]

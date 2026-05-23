@@ -80,6 +80,7 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
 
     // index into `visible` captured at 'd' press to prevent wrong-item deletion
     let mut pending_delete: Option<usize> = None;
+    let mut pending_group_delete = false;
     let mut group_total = count_in_group(&all, &groups[group_sel].0);
 
     loop {
@@ -243,14 +244,22 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             );
 
             // ── Status bar ────────────────────────────────────────────────────
-            let status = if pending_delete.is_some() {
-                "  [y] Confirm delete  [n/Esc] Cancel"
+            let status: String = if pending_delete.is_some() {
+                "  [y] Confirm delete snippet  [n/Esc] Cancel".to_string()
+            } else if pending_group_delete {
+                format!(
+                    "  [y] Delete '{}' ({} snippets)  [n/Esc] Cancel",
+                    groups[group_sel].0.label(),
+                    group_total,
+                )
             } else if focus == Focus::Search {
-                "  Type to filter  [Enter/Esc] done"
+                "  Type to filter  [Enter/Esc] done".to_string()
             } else if !query.is_empty() {
-                "  ↑↓ nav  ↵ run  d delete  / edit search  Esc clear search  q quit"
+                "  ↑↓ nav  ↵ run  d delete snippet  / edit search  Esc clear  q quit".to_string()
+            } else if focus == Focus::Groups {
+                "  ↑↓ nav  d delete group  → enter  Tab switch  q quit".to_string()
             } else {
-                "  ↑↓ nav  ↵ run  d delete  / search  Tab switch pane  q quit"
+                "  ↑↓ nav  ↵ run  d delete snippet  / search  Tab switch  q quit".to_string()
             };
             f.render_widget(
                 Paragraph::new(Span::styled(status, Style::default().fg(TN_MUTED))),
@@ -264,7 +273,26 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 continue;
             }
 
-            // Delete confirmation
+            // Group delete confirmation
+            if pending_group_delete {
+                if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
+                    let filter = groups[group_sel].0.clone();
+                    match &filter {
+                        GroupFilter::All           => { ops::delete_all(conn)?; }
+                        GroupFilter::Ungrouped     => { ops::delete_by_group(conn, "")?; }
+                        GroupFilter::Named(g)      => { ops::delete_by_group(conn, g)?; }
+                    }
+                    all = ops::list_all(conn)?;
+                    composites = all.iter().map(composite).collect();
+                    (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &GroupFilter::All);
+                    snippet_sel = 0;
+                    group_total = count_in_group(&all, &groups[group_sel].0);
+                }
+                pending_group_delete = false;
+                continue;
+            }
+
+            // Snippet delete confirmation
             if let Some(vi) = pending_delete {
                 if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y')) {
                     if let Some(&ai) = visible.get(vi) {
@@ -364,6 +392,11 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                     if snippet_sel + 1 < visible.len() {
                         snippet_sel += 1;
                     }
+                }
+                (KeyCode::Char('d'), m)
+                    if focus == Focus::Groups && !m.contains(KeyModifiers::CONTROL) =>
+                {
+                    pending_group_delete = true;
                 }
                 (KeyCode::Char('d'), m)
                     if focus == Focus::Snippets && !m.contains(KeyModifiers::CONTROL) =>
