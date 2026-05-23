@@ -267,9 +267,8 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                         ops::delete_snippet(conn, all[ai].id)?;
                         all.remove(ai);
                         composites.remove(ai);
-                        groups = build_groups(&all);
-                        group_sel = group_sel.min(groups.len().saturating_sub(1));
-                        visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
+                        let current_filter = groups[group_sel].0.clone();
+                        (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
                         snippet_sel = snippet_sel.min(visible.len().saturating_sub(1));
                     }
                 }
@@ -282,19 +281,22 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 match key.code {
                     KeyCode::Esc => {
                         query.clear();
-                        visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
+                        let current_filter = groups[group_sel].0.clone();
+                        (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
                         snippet_sel = 0;
                         focus = Focus::Snippets;
                     }
                     KeyCode::Enter => focus = Focus::Snippets,
                     KeyCode::Backspace => {
                         query.pop();
-                        visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
+                        let current_filter = groups[group_sel].0.clone();
+                        (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
                         snippet_sel = 0;
                     }
                     KeyCode::Char(c) if query.len() < 200 => {
                         query.push(c);
-                        visible = compute_visible(&all, &composites, &groups[group_sel].0, &query, &matcher);
+                        let current_filter = groups[group_sel].0.clone();
+                        (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
                         snippet_sel = 0;
                     }
                     _ => {}
@@ -376,16 +378,23 @@ fn composite(s: &Snippet) -> String {
 }
 
 fn build_groups(all: &[Snippet]) -> Vec<(GroupFilter, usize)> {
+    build_groups_filtered(all, &(0..all.len()).collect::<Vec<_>>())
+}
+
+// Build the groups list from a subset of snippet indices (e.g. query matches).
+// Only groups with at least one match appear; counts reflect matched items only.
+fn build_groups_filtered(all: &[Snippet], indices: &[usize]) -> Vec<(GroupFilter, usize)> {
     let mut named: BTreeMap<String, usize> = BTreeMap::new();
     let mut ungrouped = 0usize;
-    for s in all {
+    for &i in indices {
+        let s = &all[i];
         if s.group_name.is_empty() {
             ungrouped += 1;
         } else {
             *named.entry(s.group_name.clone()).or_insert(0) += 1;
         }
     }
-    let mut result = vec![(GroupFilter::All, all.len())];
+    let mut result = vec![(GroupFilter::All, indices.len())];
     if ungrouped > 0 {
         result.push((GroupFilter::Ungrouped, ungrouped));
     }
@@ -393,6 +402,29 @@ fn build_groups(all: &[Snippet]) -> Vec<(GroupFilter, usize)> {
         result.push((GroupFilter::Named(name), count));
     }
     result
+}
+
+// Rebuild groups (filtered by query) and visible snippets together.
+// Tries to keep the previously selected group; falls back to [ALL] if it disappears.
+fn refresh(
+    all: &[Snippet],
+    composites: &[String],
+    query: &str,
+    matcher: &SkimMatcherV2,
+    current_filter: &GroupFilter,
+) -> (Vec<(GroupFilter, usize)>, usize, Vec<usize>) {
+    let all_matching = compute_visible(all, composites, &GroupFilter::All, query, matcher);
+    let groups = if query.is_empty() {
+        build_groups(all)
+    } else {
+        build_groups_filtered(all, &all_matching)
+    };
+    let group_sel = groups
+        .iter()
+        .position(|(f, _)| f == current_filter)
+        .unwrap_or(0);
+    let visible = compute_visible(all, composites, &groups[group_sel].0, query, matcher);
+    (groups, group_sel, visible)
 }
 
 fn compute_visible(
