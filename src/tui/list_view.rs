@@ -245,6 +245,8 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
                 "  [y] Confirm delete  [n/Esc] Cancel"
             } else if focus == Focus::Search {
                 "  Type to filter  [Enter/Esc] done"
+            } else if !query.is_empty() {
+                "  ↑↓ nav  ↵ run  d delete  / edit search  Esc clear search  q quit"
             } else {
                 "  ↑↓ nav  ↵ run  d delete  / search  Tab switch pane  q quit"
             };
@@ -307,9 +309,15 @@ pub fn run(conn: &Connection, snippets: Vec<Snippet>) -> Result<Option<Snippet>>
             // Normal navigation
             match (key.code, key.modifiers) {
                 (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => return Ok(None),
-                (KeyCode::Char('q'), _) | (KeyCode::Esc, _) if focus == Focus::Groups => {
-                    return Ok(None);
+                (KeyCode::Char('q'), _) => return Ok(None),
+                // Esc clears an active query before navigating or quitting
+                (KeyCode::Esc, _) if !query.is_empty() => {
+                    query.clear();
+                    let current_filter = groups[group_sel].0.clone();
+                    (groups, group_sel, visible) = refresh(&all, &composites, &query, &matcher, &current_filter);
+                    snippet_sel = 0;
                 }
+                (KeyCode::Esc, _) if focus == Focus::Groups => return Ok(None),
                 (KeyCode::Esc, _) if focus == Focus::Snippets => focus = Focus::Groups,
                 (KeyCode::Char('/'), _) => focus = Focus::Search,
                 (KeyCode::Tab, _) => {
