@@ -4,8 +4,21 @@ A fast CLI command snippet manager. Save long commands with short nicknames and 
 
 ## Install
 
+**Linux / macOS:**
+```sh
+curl -fsSL https://raw.githubusercontent.com/aodihis/tet/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
 ```powershell
-cargo install --path .
+irm https://raw.githubusercontent.com/aodihis/tet/main/scripts/install.ps1 | iex
+```
+
+The scripts download the latest pre-built binary from [GitHub Releases](https://github.com/aodihis/tet/releases) and place it in `~/.local/bin` (Linux/Mac) or `%USERPROFILE%\.local\bin` (Windows).
+
+**From source (requires Rust):**
+```sh
+cargo install --git https://github.com/aodihis/tet
 ```
 
 ## Usage
