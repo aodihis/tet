@@ -1,0 +1,21 @@
+#!/bin/sh
+# Warn if Cargo.toml version matches the latest git tag.
+# Install once: git config core.hooksPath .githooks
+
+version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+latest_tag=$(git describe --tags --abbrev=0 2>/dev/null)
+
+if [ -z "$latest_tag" ]; then
+    exit 0
+fi
+
+tag_version=${latest_tag#v}
+
+if [ "$version" = "$tag_version" ]; then
+    echo ""
+    echo "  ⚠  Version reminder: Cargo.toml is still at $version (same as tag $latest_tag)."
+    echo "     If this is a release, bump the version before publishing."
+    echo ""
+fi
+
+exit 0

@@ -7,6 +7,29 @@ on:
     branches: [main]
 
 jobs:
+  version-check:
+    name: Version bump check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version not stale
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$latest_tag" ]; then
+            echo "No tags found — skipping version check."
+            exit 0
+          fi
+          tag_version=${latest_tag#v}
+          if [ "$version" = "$tag_version" ]; then
+            echo "::warning file=Cargo.toml::Version $version matches the latest tag $latest_tag. Remember to bump the version before the next release."
+          else
+            echo "Version $version is ahead of latest tag $latest_tag — looks good."
+          fi
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
