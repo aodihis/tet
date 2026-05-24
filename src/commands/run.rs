@@ -4,7 +4,6 @@ use rusqlite::Connection;
 
 use crate::db::ops;
 use crate::models::Snippet;
-use crate::tui;
 
 pub fn run(conn: &Connection, group: &str, name: &str) -> Result<()> {
     let snippet = match exact_match(conn, group, name)? {
@@ -26,17 +25,14 @@ pub fn run(conn: &Connection, group: &str, name: &str) -> Result<()> {
                 })
                 .collect();
             scored.sort_by(|a, b| b.0.cmp(&a.0));
-            match scored.as_slice() {
-                [] => anyhow::bail!("No snippet found for '{}'", query),
-                [(_, i)] => all
-                    .into_iter()
-                    .nth(*i)
-                    .ok_or_else(|| anyhow::anyhow!("internal: fuzzy index out of bounds"))?,
-                _ => match tui::list_view::run(conn, all, Some(query))? {
-                    Some(s) => s,
-                    None => return Ok(()),
-                },
+            if scored.is_empty() {
+                anyhow::bail!("No snippet found for '{}'", query);
             }
+            println!("'{}' not found. Did you mean:", query);
+            for line in suggestions(&all, &scored) {
+                println!("  {}", line);
+            }
+            return Ok(());
         }
     };
 
@@ -47,7 +43,7 @@ fn exact_match(conn: &Connection, group: &str, name: &str) -> Result<Option<Snip
     ops::get_snippet(conn, group, name)
 }
 
-fn execute(snippet: &Snippet) -> Result<()> {
+pub fn execute(snippet: &Snippet) -> Result<()> {
     for cmd in &snippet.commands {
         #[cfg(target_os = "windows")]
         let status = std::process::Command::new("cmd").args(["/C", cmd]).status()?;
@@ -58,6 +54,21 @@ fn execute(snippet: &Snippet) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn suggestions(all: &[Snippet], scored: &[(i64, usize)]) -> Vec<String> {
+    scored
+        .iter()
+        .take(2)
+        .map(|(_, i)| {
+            let s = &all[*i];
+            if s.group_name.is_empty() {
+                format!("tet {}", s.name)
+            } else {
+                format!("tet {} {}", s.group_name, s.name)
+            }
+        })
+        .collect()
 }
 
 fn build_query(group: &str, name: &str) -> String {
@@ -208,5 +219,84 @@ mod tests {
         ops::insert_snippet(&conn, "multi", "grp", &cmds).unwrap();
         let s = exact_match(&conn, "grp", "multi").unwrap().unwrap();
         assert_eq!(s.commands, cmds);
+    }
+
+    // ── suggestions ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn suggestions_ungrouped_uses_name_only() {
+        let s = make_snippet("", "ping", &["ping 8.8.8.8"]);
+        let scored = vec![(10, 0usize)];
+        assert_eq!(suggestions(&[s], &scored), vec!["tet ping"]);
+    }
+
+    #[test]
+    fn suggestions_grouped_includes_group() {
+        let s = make_snippet("home", "dns", &["nslookup google.com"]);
+        let scored = vec![(10, 0usize)];
+        assert_eq!(suggestions(&[s], &scored), vec!["tet home dns"]);
+    }
+
+    #[test]
+    fn suggestions_capped_at_two() {
+        let snippets = vec![
+            make_snippet("", "alpha", &["echo a"]),
+            make_snippet("", "beta", &["echo b"]),
+            make_snippet("", "gamma", &["echo c"]),
+        ];
+        let scored = vec![(30, 0usize), (20, 1), (10, 2)];
+        let result = suggestions(&snippets, &scored);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "tet alpha");
+        assert_eq!(result[1], "tet beta");
+    }
+
+    #[test]
+    fn suggestions_single_match_returns_one() {
+        let s = make_snippet("", "ping", &["ping 8.8.8.8"]);
+        let scored = vec![(10, 0usize)];
+        let result = suggestions(&[s], &scored);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn suggestions_empty_when_scored_empty() {
+        let result = suggestions(&[], &[]);
+        assert!(result.is_empty());
+    }
+
+    // ── run end-to-end ────────────────────────────────────────────────────────
+
+    #[test]
+    fn run_errors_on_empty_db() {
+        let conn = setup();
+        let err = run(&conn, "", "anything").unwrap_err();
+        assert!(err.to_string().contains("No snippets saved yet"));
+    }
+
+    #[test]
+    fn run_returns_ok_on_fuzzy_match() {
+        let conn = setup();
+        ops::insert_snippet(&conn, "ping", "", &["echo ping".to_string()]).unwrap();
+        // "pin" fuzzy-matches "ping" but is not an exact match
+        let result = run(&conn, "", "pin");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_errors_when_no_fuzzy_match() {
+        let conn = setup();
+        ops::insert_snippet(&conn, "ping", "", &["echo ping".to_string()]).unwrap();
+        let err = run(&conn, "", "xyzzy").unwrap_err();
+        assert!(err.to_string().contains("No snippet found"));
+    }
+
+    #[test]
+    fn run_returns_ok_on_fuzzy_match_with_group() {
+        let conn = setup();
+        ops::insert_snippet(&conn, "dns", "home", &["echo dns".to_string()]).unwrap();
+        // "hom dn" fuzzy-matches "home dns" composite but won't exact-match
+        let result = run(&conn, "home", "dn");
+        assert!(result.is_ok());
     }
 }

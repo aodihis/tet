@@ -103,6 +103,14 @@ impl FormState {
         }
     }
 
+    pub(crate) fn active_field_mut(&mut self) -> Option<&mut String> {
+        match self.focus {
+            Field::Group    => Some(&mut self.group),
+            Field::Name     => Some(&mut self.name),
+            Field::Commands => None,
+        }
+    }
+
     pub(crate) fn add_command(&mut self) {
         self.cmd_sel += 1;
         self.commands.insert(self.cmd_sel, String::new());

@@ -1,10 +1,12 @@
 # tet
 
-A fast CLI command snippet manager. Save long commands with short nicknames and run them instantly.
+A simple CLI command snippet manager. Save long commands with short names and run them instantly.
+
+![tet demo](assets/tet.gif)
 
 ## Install
 
-**Linux / macOS:**
+**Linux / macOS** *(not yet tested — use from source if you run into issues)*:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/aodihis/tet/main/scripts/install.sh | sh
 ```
@@ -21,6 +23,25 @@ The scripts download the latest pre-built binary from [GitHub Releases](https://
 cargo install --git https://github.com/aodihis/tet
 ```
 
+## Update
+
+Re-run the same install command to get the latest version:
+
+**Linux / macOS** *(not yet tested)*:
+```sh
+curl -fsSL https://raw.githubusercontent.com/aodihis/tet/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/aodihis/tet/main/scripts/install.ps1 | iex
+```
+
+**From source:**
+```sh
+cargo install --git https://github.com/aodihis/tet --force
+```
+
 ## Usage
 
 ### Save a snippet
@@ -32,37 +53,37 @@ tet save
 
 Non-interactive:
 ```
-tet save [group] <shortcut> <command...>
+tet save <name> <command...>
+tet save -g <group> <name> <command...>
 ```
 
-Use `-` as group to save without a group:
+Examples:
 ```
-tet save - ping "ping 8.8.8.8 -n 4"
-tet save home dns "nslookup google.com 8.8.8.8"
+tet save ping "ping 8.8.8.8 -n 4"
+tet save -g home dns "nslookup google.com 8.8.8.8"
 ```
 
 ### Run a snippet
 
 ```
-tet <shortcut>
+tet <name>
+tet <group> <name>
 ```
 
-If the shortcut isn't found exactly, fuzzy search kicks in and shows a picker.
 
 ### List snippets
 
 ```
-tet list              # all snippets
-tet list home         # only "home" group
-tet list -            # only ungrouped
+tet list
 ```
 
-The list opens a TUI with a live search bar. Type to filter by shortcut, group, or command content.
+The list opens a TUI with a live search bar. Type to filter by name, group, or command content. Press Enter on a snippet to run it.
 
 ### Delete a snippet
 
 ```
-tet delete <shortcut>
+tet delete <name>
+tet delete -g <group> <name>
 ```
 
 Aliases: `tet del`, `tet rm`
@@ -94,5 +115,5 @@ Snippets are stored in SQLite at:
 
 ## Reserved words
 
-These cannot be used as shortcut names:
+These cannot be used as snippet names:
 `save`, `save-last`, `list`, `ls`, `search`, `find`, `delete`, `del`, `rm`, `help`, `run`, `shell`, `-`
